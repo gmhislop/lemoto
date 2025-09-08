@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const encodedRedirectTo = requestUrl.searchParams.get("redirect") || "/app";
+  const encodedRedirectTo = requestUrl.searchParams.get("redirect") || "/app/dashboard";
   const priceId = decodeURIComponent(
     requestUrl.searchParams.get("priceId") || ""
   );
