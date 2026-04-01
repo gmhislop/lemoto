@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Lemoto",
+    "slug": "lemoto",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EBEBEB"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.lemoto.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#EBEBEB"
+      },
+      "package": "com.lemoto.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "scheme": "lemoto",
+    "newArchEnabled": true,
+    "plugins": ["expo-router"]
+  }
+}

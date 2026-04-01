@@ -35,6 +35,7 @@ app.lemoto.com/sign-up        -> Auth pages
 ### Phase 2: DNS & Deployment Setup
 
 1. **DNS Configuration**:
+
    ```
    A     lemoto.com          -> Marketing site IP
    CNAME app.lemoto.com      -> App deployment URL
@@ -74,6 +75,7 @@ app.lemoto.com/sign-up        -> Auth pages
 ## Files Ready for Migration
 
 ### Already Configured
+
 - ✅ `.env.local` - Environment variables setup
 - ✅ `config.ts` - Domain configuration
 - ✅ `middleware.ts` - Redirect logic (commented for development)
