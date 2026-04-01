@@ -1,4 +1,12 @@
-import { View } from 'react-native';
+import { useEffect } from 'react';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { TrafficLight as TrafficLightStatus } from '../types/ride';
@@ -11,15 +19,40 @@ interface Props {
 }
 
 export function TrafficLight({ status, size = 'md' }: Props) {
+  const scale = useSharedValue(1);
   const dim = SIZES[size];
+
+  useEffect(() => {
+    if (status === 'green' && size !== 'sm') {
+      scale.value = withRepeat(
+        withSequence(
+          withTiming(1.14, { duration: 900 }),
+          withTiming(1, { duration: 900 }),
+        ),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(scale);
+      scale.value = withTiming(1, { duration: 200 });
+    }
+  }, [status, size]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <View
-      style={{
-        width: dim,
-        height: dim,
-        borderRadius: radius.full,
-        backgroundColor: colors[status],
-      }}
+    <Animated.View
+      style={[
+        {
+          width: dim,
+          height: dim,
+          borderRadius: radius.full,
+          backgroundColor: colors[status],
+        },
+        animStyle,
+      ]}
     />
   );
 }

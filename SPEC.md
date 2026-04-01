@@ -339,6 +339,136 @@ Twee knoppen. Berekent datum/tijd automatisch:
 
 ---
 
+## v1.1 Roadmap — Repeatable Ride Plans
+
+### Kernidee
+
+Motorrijders rijden vaak dezelfde routes op vaste momenten: woon-werk, vaste weekendrit. In v1.1 kunnen ritten worden aangemaakt als **herhalend plan** — elke dag in het schema wordt automatisch een losse `Ride` (met eigen weeropvraging), maar ze zijn gekoppeld onder één `RidePlan`.
+
+> "Bouw eerst repeatable ride plans met heen/terug-blokken; agenda-integratie pas later als optionele shortcut."
+
+---
+
+### RidePlan model
+
+```ts
+// types/ride-plan.ts
+
+export type RepeatType = 'daily' | 'weekly' | 'weekdays' | 'custom';
+
+export interface RideBlock {
+  label: string;        // bijv. "Heen" of "Terug"
+  departureTime: string; // "07:30"
+  durationHours: number; // 1 | 1.5 | 2 | 3
+}
+
+export interface RidePlan {
+  id: string;
+  name: string;                    // bijv. "Woon-werk"
+  location: {
+    lat: number;
+    lon: number;
+    label: string;
+  };
+  repeatType: RepeatType;
+  activeDays: number[];            // 0 = maandag, 6 = zondag
+  blocks: RideBlock[];             // [heen, terug] of [enkeltje]
+  active: boolean;
+  createdAt: string;
+}
+```
+
+---
+
+### Heen/terug-blokken
+
+Elke `RidePlan` heeft één of twee blokken:
+- **Enkeltje**: één blok (bijv. alleen de heenrit)
+- **Retour**: twee blokken — heen + terug met aparte vertrektijd en duur
+
+Elk blok genereert een aparte `Ride` per actieve dag. De `Ride` krijgt een `planId`-veld zodat ritten gegroepeerd weergegeven kunnen worden.
+
+```ts
+// types/ride.ts toevoeging
+export interface Ride {
+  // ...bestaande velden...
+  planId?: string;   // koppeling aan RidePlan
+  blockLabel?: string; // "Heen" | "Terug" | undefined
+}
+```
+
+---
+
+### Schermen v1.1
+
+#### Ride Plan aanmaken (`/add-plan`)
+
+- Naam invoer
+- Locatie (tekstveld + GPS-knop)
+- Herhalingspatroon: dagelijks / doordeweeks / wekelijks / aangepast
+- Aangepast: dag-toggles Ma-Di-Wo-Do-Vr-Za-Zo
+- Blokken:
+  - Enkeltje of Retour (toggle)
+  - Per blok: vertrektijd + duur
+  - Labels aanpasbaar ("Heen" / "Terug" als default)
+- Opslaan → genereert ritten voor de komende 7 dagen
+
+#### Overzicht Plans (`/plans`)
+
+- Lijst van actieve plannen
+- Per plan: naam, herhalingspatroon, volgende rit
+- Toggle: plan activeren/pauzeren
+- Tik → plan detail / aanpassen
+
+#### Home aanpassing
+
+- Ritten gegenereerd door een plan worden gegroepeerd getoond indien ze op dezelfde dag vallen:
+  ```
+  [Woon-werk — Woensdag 4 juni]
+    Heen  07:30  🟢
+    Terug 17:00  🟠
+  ```
+- Standalone ritten blijven zoals nu (losse `RideCard`)
+
+---
+
+### Maand/week-overzicht
+
+Een nieuw tabblad of scherm toont een kalenderweergave:
+- Week view (standaard): rijen per dag, kolommen per blok
+- Kleurcodering per rit (groen/oranje/rood/pending)
+- Tik op een dag → dagdetail met alle ritten op die dag
+- Maand view (optioneel, v1.2): kleurstip per dag op basis van slechtste rit
+
+---
+
+### Agenda-integratie (later, optioneel)
+
+Niet in v1.1. Wordt een optionele stap na de repeatable plans feature:
+- Export naar iOS Agenda / Google Calendar als `.ics` of native API
+- Trigger: "Voeg toe aan agenda" knop op rit detail
+- Geen two-way sync — Lemoto blijft de source of truth
+
+---
+
+### Storage uitbreiding v1.1
+
+```ts
+// lib/plan-storage.ts
+
+const PLANS_KEY = 'lemoto:plans';
+
+export async function getPlans(): Promise<RidePlan[]>
+export async function savePlan(plan: RidePlan): Promise<void>
+export async function updatePlan(id: string, updates: Partial<RidePlan>): Promise<void>
+export async function deletePlan(id: string): Promise<void>
+
+// Genereert Ride-objecten voor de komende N dagen op basis van plan
+export async function generateRidesFromPlan(plan: RidePlan, days?: number): Promise<Ride[]>
+```
+
+---
+
 ## Open-Meteo limieten
 
 - Max 7 dagen vooruit

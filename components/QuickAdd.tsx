@@ -1,6 +1,7 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { PressableScale } from './PressableScale';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
@@ -14,21 +15,17 @@ export function QuickAdd({ onSelect }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.row}>
-        <TouchableOpacity style={styles.btn} onPress={() => onSelect('tonight')} activeOpacity={0.7}>
+        <PressableScale style={styles.btn} onPress={() => onSelect('tonight')}>
           <Text style={styles.label}>Vanavond</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btn} onPress={() => onSelect('weekend')} activeOpacity={0.7}>
+        </PressableScale>
+        <PressableScale style={styles.btn} onPress={() => onSelect('weekend')}>
           <Text style={styles.label}>Dit weekend</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
-      <TouchableOpacity
-        style={styles.scheduleBtn}
-        onPress={() => router.push('/week-schedule')}
-        activeOpacity={0.7}
-      >
+      <PressableScale style={styles.scheduleBtn} onPress={() => router.push('/week-schedule')}>
         <Feather name="calendar" size={14} color={colors.textSecondary} />
         <Text style={styles.scheduleLabel}>Weekschema instellen</Text>
-      </TouchableOpacity>
+      </PressableScale>
     </View>
   );
 }

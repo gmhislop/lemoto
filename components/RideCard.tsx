@@ -1,6 +1,7 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ride } from '../types/ride';
 import { TrafficLight } from './TrafficLight';
+import { PressableScale } from './PressableScale';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
@@ -15,7 +16,7 @@ interface Props {
 
 export function RideCard({ ride, onPress }: Props) {
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+    <PressableScale style={styles.card} onPress={onPress}>
       <View style={styles.header}>
         <Text style={styles.label} numberOfLines={1}>
           {ride.label || 'Naamloze rit'}
@@ -32,7 +33,7 @@ export function RideCard({ ride, onPress }: Props) {
       <Text style={styles.location} numberOfLines={1}>
         {ride.location.label}
       </Text>
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 

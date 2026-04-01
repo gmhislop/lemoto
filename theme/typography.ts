@@ -1,26 +1,30 @@
 export const typography = {
 
-  // Font families
   fontFamily: {
-    sans:     undefined,           // system default (SF Pro op iOS)
-    mono:     'DMMono_400Regular', // data-waarden, hero-status, tijden
-    monoBold: 'DMMono_500Medium',  // grote hero-waarden
+    headline:     'SpaceGrotesk_700Bold',   // technical data, heroes, labels
+    headlineMed:  'SpaceGrotesk_500Medium',
+    headlineReg:  'SpaceGrotesk_400Regular',
+    body:         'Inter_400Regular',
+    bodyMed:      'Inter_500Medium',
+    bodySemi:     'Inter_600SemiBold',
+    // legacy aliases
+    mono:         'SpaceGrotesk_400Regular',
+    monoBold:     'SpaceGrotesk_700Bold',
   },
 
-  // Font sizes
   size: {
-    xs:      11,
-    sm:      13,
-    base:    15,
-    md:      17,  // iOS standaard body
-    lg:      20,
-    xl:      24,
+    xs:      10,
+    sm:      12,
+    base:    14,
+    md:      16,
+    lg:      18,
+    xl:      22,
     xxl:     32,
-    hero:    64,  // stoplicht status op detailscherm
-    heroSub: 20,  // "kan ik rijden?" aanbeveling
+    display: 48,
+    hero:    56,
+    heroSub: 16,
   },
 
-  // Font weights
   weight: {
     regular:  '400' as const,
     medium:   '500' as const,
@@ -28,9 +32,8 @@ export const typography = {
     bold:     '700' as const,
   },
 
-  // Line heights
   lineHeight: {
-    tight:  1.2,
+    tight:  1.1,
     normal: 1.5,
     loose:  1.75,
   },

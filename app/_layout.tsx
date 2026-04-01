@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { useFonts, DMMono_400Regular, DMMono_500Medium } from '@expo-google-fonts/dm-mono';
+import {
+  useFonts,
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_700Bold,
+} from '@expo-google-fonts/space-grotesk';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+} from '@expo-google-fonts/inter';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { SEED_RIDES } from '../lib/seed-data';
-import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
 
 async function seedIfEmpty() {
   const existing = await AsyncStorage.getItem('lemoto:rides');
@@ -18,8 +24,29 @@ async function seedIfEmpty() {
   }
 }
 
+function RootStack() {
+  const { isDark, colors } = useTheme();
+  return (
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="ride/[id]" />
+        <Stack.Screen name="week-schedule" options={{ presentation: 'modal' }} />
+      </Stack>
+    </>
+  );
+}
+
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({ DMMono_400Regular, DMMono_500Medium });
+  const [fontsLoaded, fontError] = useFonts({
+    SpaceGrotesk_400Regular,
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+  });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -32,33 +59,9 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerBackTitle: 'Terug',
-          contentStyle: { backgroundColor: '#EBEBEB' },
-        }}
-      >
-        <Stack.Screen
-          name="index"
-          options={{
-            title: 'Lemoto',
-            headerRight: () => (
-              <TouchableOpacity
-                onPress={() => router.push('/settings')}
-                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                style={{ marginRight: spacing['2'] }}
-              >
-                <Feather name="settings" size={20} color={colors.textPrimary} />
-              </TouchableOpacity>
-            ),
-          }}
-        />
-        <Stack.Screen name="add-ride" options={{ title: 'Rit toevoegen', presentation: 'modal' }} />
-        <Stack.Screen name="ride/[id]" options={{ title: 'Rit detail' }} />
-        <Stack.Screen name="settings" options={{ title: 'Instellingen' }} />
-        <Stack.Screen name="week-schedule" options={{ title: 'Weekschema', presentation: 'modal' }} />
-      </Stack>
+      <ThemeProvider>
+        <RootStack />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
