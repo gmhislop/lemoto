@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
@@ -13,6 +13,8 @@ import { useTheme, ThemeMode } from '../../context/ThemeContext';
 import { Colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { UserPreferences, DEFAULT_PREFERENCES } from '../../types/weather';
+import { getRides, updateRide, deletePastRides } from '../../lib/ride-storage';
+import { calculateTrafficLight } from '../../lib/weather-score';
 
 const RAIN_OPTIONS = ['NONE', 'LIGHT', 'HEAVY'] as const;
 const RAIN_MAP: UserPreferences['rainTolerance'][] = ['low', 'normal', 'high'];
@@ -67,8 +69,32 @@ export default function SettingsScreen() {
   async function savePrefs(updated: UserPreferences) {
     setPrefs(updated);
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
+    // Re-score all rides that have weather data using the new prefs
+    const rides = await getRides();
+    await Promise.allSettled(
+      rides
+        .filter((r) => r.weatherData)
+        .map((r) => {
+          const { status, reasons } = calculateTrafficLight(r.weatherData!, updated);
+          return updateRide(r.id, { status, reasons });
+        }),
+    );
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  }
+
+  function handleDeletePastRides() {
+    Alert.alert('Delete past rides', 'Remove all rides from before today?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const count = await deletePastRides();
+          Alert.alert('Done', `${count} past ride${count !== 1 ? 's' : ''} removed.`);
+        },
+      },
+    ]);
   }
 
   function handleDeleteData() {
@@ -108,28 +134,18 @@ export default function SettingsScreen() {
           </Animated.View>
         </View>
 
-        {/* Appearance */}
+        {/* Repeat rides */}
         <FadeInView delay={60}>
           <View style={s.section}>
-            <SectionHeader title="APPEARANCE" colors={colors} />
-            <View style={s.card}>
-              <View style={s.segmentRow}>
-                {APPEAR_OPTIONS.map(({ label, mode, icon }) => {
-                  const active = themeMode === mode;
-                  return (
-                    <TouchableOpacity
-                      key={mode}
-                      style={[s.segmentBtn, active && s.segmentBtnActive]}
-                      onPress={() => setMode(mode)}
-                      activeOpacity={0.7}
-                    >
-                      <Feather name={icon} size={14} color={active ? colors.white : colors.outline} />
-                      <Text style={[s.segmentText, active && s.segmentTextActive]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            <TouchableOpacity style={s.listRow} onPress={() => router.push('/recurring')} activeOpacity={0.7}>
+              <View style={s.listRowLeft}>
+                <View style={s.listIconBox}>
+                  <Feather name="repeat" size={18} color={colors.primary} />
+                </View>
+                <Text style={s.listRowLabel}>REPEAT RIDES</Text>
               </View>
-            </View>
+              <Feather name="chevron-right" size={18} color={colors.outline} />
+            </TouchableOpacity>
           </View>
         </FadeInView>
 
@@ -200,8 +216,42 @@ export default function SettingsScreen() {
           </View>
         </FadeInView>
 
+        {/* Appearance */}
+        <FadeInView delay={180}>
+          <View style={s.section}>
+            <SectionHeader title="APPEARANCE" colors={colors} />
+            <View style={s.card}>
+              <View style={s.segmentRow}>
+                {APPEAR_OPTIONS.map(({ label, mode, icon }) => {
+                  const active = themeMode === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      style={[s.segmentBtn, active && s.segmentBtnActive]}
+                      onPress={() => setMode(mode)}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name={icon} size={14} color={active ? colors.background : colors.outline} />
+                      <Text style={[s.segmentText, active && s.segmentTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        </FadeInView>
+
         {/* Data */}
         <View style={s.section}>
+          <TouchableOpacity style={[s.listRow, { marginBottom: 2 }]} onPress={handleDeletePastRides} activeOpacity={0.7}>
+            <View style={s.listRowLeft}>
+              <View style={s.listIconBox}>
+                <Feather name="clock" size={18} color={colors.outline} />
+              </View>
+              <Text style={s.listRowLabel}>DELETE PAST RIDES</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.outline} />
+          </TouchableOpacity>
           <TouchableOpacity style={s.listRow} onPress={handleDeleteData} activeOpacity={0.7}>
             <View style={s.listRowLeft}>
               <View style={s.listIconBox}>
@@ -314,14 +364,14 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     borderColor: c.outlineAlpha20,
     borderRadius: 2,
   },
-  segmentBtnActive: { backgroundColor: c.onSurface, borderColor: c.onSurface },
+  segmentBtnActive: { backgroundColor: c.onSurfaceVariant, borderColor: c.onSurfaceVariant },
   segmentText: {
     fontFamily: typography.fontFamily.headline,
     fontSize: typography.size.xs,
     color: c.onSurface,
     letterSpacing: 1.5,
   },
-  segmentTextActive: { color: c.white },
+  segmentTextActive: { color: c.background },
 
   sliderBlock: { backgroundColor: c.surfaceLow, padding: 20, gap: 16 },
   sliderBlockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },

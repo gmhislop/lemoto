@@ -1,5 +1,16 @@
 import { WeatherData } from '../types/weather';
 
+export interface HourlySlice {
+  hour: string;       // "16:00"
+  isoTime: string;    // full ISO string for ordering
+  temperatureC: number;
+  feelsLikeC: number;
+  precipitationProbability: number;
+  precipitationMm: number;
+  windSpeedKmh: number;
+  windGustsKmh: number;
+}
+
 const GEO_BASE = 'https://geocoding-api.open-meteo.com/v1';
 const WEATHER_BASE = 'https://api.open-meteo.com/v1';
 
@@ -72,4 +83,48 @@ export async function fetchWeatherForRide(
     windSpeedKmh: Math.round(avg(slice(windSpeed))),
     windGustsKmh: Math.round(max(slice(windGusts))),
   };
+}
+
+/**
+ * Fetches remaining hourly data for today (from now onwards).
+ * Used by the "best time to ride" feature on the home screen.
+ */
+export async function fetchTodayHourly(lat: number, lon: number): Promise<HourlySlice[]> {
+  const url =
+    `${WEATHER_BASE}/forecast?latitude=${lat}&longitude=${lon}` +
+    `&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m` +
+    `&timezone=auto&forecast_days=2`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Weather fetch failed: ${res.status}`);
+  const data = await res.json();
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  const times: string[] = data.hourly.time;
+  const temps: number[] = data.hourly.temperature_2m;
+  const feelsLike: number[] = data.hourly.apparent_temperature;
+  const precipProb: number[] = data.hourly.precipitation_probability;
+  const precip: number[] = data.hourly.precipitation;
+  const windSpeed: number[] = data.hourly.wind_speed_10m;
+  const windGusts: number[] = data.hourly.wind_gusts_10m;
+
+  return times.reduce<HourlySlice[]>((acc, t, i) => {
+    if (!t.startsWith(todayStr)) return acc;
+    const dt = new Date(t);
+    if (dt < now) return acc; // skip past hours
+    const hh = String(dt.getHours()).padStart(2, '0');
+    acc.push({
+      hour: `${hh}:00`,
+      isoTime: t,
+      temperatureC: temps[i],
+      feelsLikeC: feelsLike[i],
+      precipitationProbability: precipProb[i],
+      precipitationMm: precip[i],
+      windSpeedKmh: windSpeed[i],
+      windGustsKmh: windGusts[i],
+    });
+    return acc;
+  }, []);
 }

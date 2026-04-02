@@ -34,3 +34,11 @@ export async function deleteRide(id: string): Promise<void> {
   const filtered = rides.filter((r) => r.id !== id);
   await AsyncStorage.setItem(RIDES_KEY, JSON.stringify(filtered));
 }
+
+export async function deletePastRides(): Promise<number> {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const rides = await getRides();
+  const upcoming = rides.filter((r) => new Date(r.date + 'T00:00:00') >= today);
+  await AsyncStorage.setItem(RIDES_KEY, JSON.stringify(upcoming));
+  return rides.length - upcoming.length;
+}

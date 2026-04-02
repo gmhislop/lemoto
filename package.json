@@ -6,7 +6,18 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
+    ]
   },
   "dependencies": {
     "@expo-google-fonts/dm-mono": "^0.3.0",
@@ -19,6 +30,7 @@
     "expo": "~52.0.0",
     "expo-font": "~13.0.0",
     "expo-haptics": "~14.0.1",
+    "expo-notifications": "~0.29.14",
     "expo-router": "~4.0.0",
     "expo-splash-screen": "~0.29.24",
     "expo-status-bar": "~2.0.0",
@@ -34,7 +46,11 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^29.5.14",
     "@types/react": "~18.3.0",
+    "jest": "^29.7.0",
+    "jest-expo": "^52.0.6",
     "typescript": "~5.3.0"
   }
 }

@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { SEED_RIDES } from '../lib/seed-data';
+import { requestNotificationPermission } from '../lib/notifications';
 
 async function seedIfEmpty() {
   const existing = await AsyncStorage.getItem('lemoto:rides');
@@ -32,6 +33,9 @@ function RootStack() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="ride/[id]" />
+        <Stack.Screen name="recurring" />
+        <Stack.Screen name="recurring-new" />
+        <Stack.Screen name="edit-ride/[id]" />
         <Stack.Screen name="week-schedule" options={{ presentation: 'modal' }} />
       </Stack>
     </>
@@ -51,7 +55,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      seedIfEmpty().finally(() => setReady(true));
+      seedIfEmpty()
+        .then(() => requestNotificationPermission())
+        .finally(() => setReady(true));
     }
   }, [fontsLoaded, fontError]);
 

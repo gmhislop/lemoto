@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import Animated, {
@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ride } from '../../types/ride';
 import { deleteRide, getRides, updateRide } from '../../lib/ride-storage';
 import { fetchWeatherForRide } from '../../lib/weather-api';
-import { calculateTrafficLight, calculateConfidence } from '../../lib/weather-score';
+import { calculateRideScore, calculateConfidence, summarizeRide } from '../../lib/weather-score';
 import { UserPreferences, DEFAULT_PREFERENCES } from '../../types/weather';
 import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/colors';
@@ -46,12 +46,12 @@ function getEndTime(startTime: string, durationHours: number): string {
 // Animated progress bar that fills on mount
 function AnimatedBar({ targetPercent, color }: { targetPercent: number; color: string }) {
   const width = useSharedValue(0);
-  const barStyle = useAnimatedStyle(() => ({ width: `${width.value}%` as any }));
-  useState(() => {
+  const barStyle = useAnimatedStyle(() => ({ width: (width.value + '%') as any }));
+  useEffect(() => {
     width.value = withDelay(300, withTiming(Math.min(Math.max(targetPercent, 0), 100), {
       duration: 900, easing: Easing.out(Easing.cubic),
     }));
-  });
+  }, []);
   return (
     <View style={barStatic.track}>
       <Animated.View style={[barStatic.fill, { backgroundColor: color }, barStyle]} />
@@ -73,7 +73,7 @@ export default function RideDetailScreen() {
 
   const refreshRotation = useSharedValue(0);
   const refreshIconStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${refreshRotation.value}deg` }],
+    transform: [{ rotate: (refreshRotation.value + 'deg') as any }],
   }));
 
   const heroScale = useSharedValue(0.85);
@@ -106,14 +106,25 @@ export default function RideDetailScreen() {
       -1,
     );
     try {
-      const [weatherData, prefsRaw] = await Promise.all([
-        fetchWeatherForRide(ride.location.lat, ride.location.lon, ride.date, ride.startTime, ride.durationHours),
+      const endTime = getEndTime(ride.startTime, ride.durationHours);
+      const [outboundWeather, returnWeather, prefsRaw] = await Promise.all([
+        fetchWeatherForRide(ride.location.lat, ride.location.lon, ride.date, ride.startTime, 1),
+        fetchWeatherForRide(ride.location.lat, ride.location.lon, ride.date, endTime, 1),
         AsyncStorage.getItem(PREFS_KEY),
       ]);
       const prefs: UserPreferences = prefsRaw ? JSON.parse(prefsRaw) : DEFAULT_PREFERENCES;
-      const { status, reasons } = calculateTrafficLight(weatherData, prefs);
+      const { overallStatus, outboundStatus, returnStatus, reasons } = calculateRideScore(outboundWeather, returnWeather, prefs);
       const confidence = calculateConfidence(ride.date);
-      const updates = { weatherData, status, reasons, confidence, fetchedAt: new Date().toISOString() };
+      const updates = {
+        weatherData: outboundWeather,
+        returnWeatherData: returnWeather,
+        status: overallStatus,
+        outboundStatus,
+        returnStatus,
+        reasons,
+        confidence,
+        fetchedAt: new Date().toISOString(),
+      };
       await updateRide(ride.id, updates);
       setRide((prev) => prev ? { ...prev, ...updates } : prev);
       heroOpacity.value = 0;
@@ -141,6 +152,12 @@ export default function RideDetailScreen() {
   const accent = { green: colors.green, orange: colors.orange, red: colors.red }[status];
   const wd = ride.weatherData;
   const criticalReason = ride.reasons?.find((r) => r.severity === 'danger') ?? ride.reasons?.find((r) => r.severity === 'warning') ?? null;
+  const rideSummary = ride.reasons
+    ? summarizeRide(status, ride.reasons, {
+        returnTime: getEndTime(ride.startTime, ride.durationHours),
+        confidence: ride.confidence,
+      })
+    : STATUS_SUB[status];
 
   return (
     <>
@@ -171,7 +188,7 @@ export default function RideDetailScreen() {
             <Text style={s.heroBadgeText}>{ride.confidence ? ride.confidence.toUpperCase() : 'HIGH'} CONF.</Text>
           </View>
           <Text style={s.heroTitle}>{STATUS_HEADLINE[status]}</Text>
-          <Text style={s.heroSub}>{STATUS_SUB[status]}</Text>
+          <Text style={s.heroSub}>{rideSummary.toUpperCase()}</Text>
         </Animated.View>
 
         {/* Critical factor */}
@@ -256,6 +273,13 @@ export default function RideDetailScreen() {
               <InfoRow label="DEPARTURE" value={`${ride.startTime} — ${getEndTime(ride.startTime, ride.durationHours)}`} colors={colors} />
               <InfoRow label="LOCATION" value={ride.location.label.toUpperCase()} colors={colors} />
               {wd && <InfoRow label="WIND" value={`${Math.max(wd.windSpeedKmh, wd.windGustsKmh)} KM/H`} colors={colors} />}
+              {(ride.outboundStatus || ride.returnStatus) && (
+                <>
+                  <View style={s.conditionsDivider} />
+                  <LegRow label="OUTBOUND" status={ride.outboundStatus ?? 'green'} colors={colors} />
+                  <LegRow label="RETURN" status={ride.returnStatus ?? 'green'} colors={colors} />
+                </>
+              )}
 
               {ride.reasons && ride.reasons.length > 0 && (
                 <>
@@ -270,6 +294,16 @@ export default function RideDetailScreen() {
                       <Text style={s.reasonText}>{reason.label}</Text>
                     </View>
                   ))}
+                </>
+              )}
+
+              {ride.recurringId && (
+                <>
+                  <View style={s.conditionsDivider} />
+                  <View style={s.reasonRow}>
+                    <Feather name="repeat" size={14} color={colors.primary} />
+                    <Text style={s.reasonText}>Generated from a repeat ride rule</Text>
+                  </View>
                 </>
               )}
 
@@ -290,6 +324,14 @@ export default function RideDetailScreen() {
           </View>
         </FadeInView>
 
+        {/* Edit ride */}
+        <FadeInView delay={250}>
+          <PressableScale style={s.editBtn} onPress={() => router.push(`/edit-ride/${ride.id}`)} scale={0.97} haptic>
+            <Feather name="edit-2" size={16} color={colors.onSurface} />
+            <Text style={s.editBtnText}>EDIT RIDE</Text>
+          </PressableScale>
+        </FadeInView>
+
         {/* Refresh weather */}
         <FadeInView delay={260}>
           <PressableScale style={[s.refreshBtn, refreshing && { opacity: 0.6 }]} onPress={handleRefreshWeather} scale={0.97} haptic>
@@ -308,6 +350,19 @@ export default function RideDetailScreen() {
         </FadeInView>
       </ScrollView>
     </>
+  );
+}
+
+function LegRow({ label, status, colors: c }: { label: string; status: 'green' | 'orange' | 'red'; colors: Colors }) {
+  const dot = { green: c.green, orange: c.orange, red: c.red }[status];
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 }}>
+      <Text style={{ fontFamily: typography.fontFamily.headline, fontSize: typography.size.xs, color: c.onSurfaceVariant, letterSpacing: 1 }}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
+        <Text style={{ fontFamily: typography.fontFamily.headline, fontSize: typography.size.xs, color: dot, letterSpacing: 0.5 }}>{status.toUpperCase()}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -366,7 +421,9 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   confidenceLabel: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.xs, color: c.onSurfaceVariant, letterSpacing: 1 },
   confidenceValue: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.xs, letterSpacing: 1 },
 
-  refreshBtn: { backgroundColor: c.surfaceCard, borderRadius: 2, paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: c.outlineAlpha15, marginTop: 8 },
+  editBtn: { backgroundColor: c.surfaceLow, borderRadius: 2, paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: c.outlineAlpha20, marginTop: 8 },
+  editBtnText: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.base, color: c.onSurface, letterSpacing: 2 },
+  refreshBtn: { backgroundColor: c.surfaceCard, borderRadius: 2, paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: c.outlineAlpha15, marginTop: 4 },
   refreshBtnText: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.base, color: c.primary, letterSpacing: 2 },
   deleteBtn: { borderWidth: 1, borderColor: c.outlineAlpha25, borderRadius: 2, paddingVertical: 18, alignItems: 'center', marginTop: 4 },
   deleteBtnText: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.base, color: c.outline, letterSpacing: 2 },

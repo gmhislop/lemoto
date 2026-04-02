@@ -13,9 +13,13 @@ export interface Ride {
     lon: number;
     label: string;      // bijv. "Amsterdam"
   };
-  status?: TrafficLight;
+  status?: TrafficLight;           // overall = worst of outbound/return
+  outboundStatus?: TrafficLight;   // heen — weather at departure
+  returnStatus?: TrafficLight;     // terug — weather at return
   confidence?: 'high' | 'medium' | 'low';
   reasons?: WeatherReason[];
-  weatherData?: WeatherData;
+  weatherData?: WeatherData;       // outbound weather
+  returnWeatherData?: WeatherData; // return weather
   fetchedAt?: string;
+  recurringId?: string;            // set when generated from a RecurringRide rule
 }

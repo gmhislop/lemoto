@@ -11,6 +11,13 @@ export interface WeatherReason {
   factor: 'rain' | 'wind' | 'temperature';
   label: string;    // bijv. "Kans op regen (45%)"
   severity: 'ok' | 'warning' | 'danger';
+  /**
+   * 0–10 — how far the value sits along the warning→danger range.
+   * 10 = at or above the danger threshold.
+   * Used by summarizeRide to rank reasons within the same severity tier.
+   * Optional so test fixtures and tagged reasons don't need to carry it.
+   */
+  score?: number;
 }
 
 export interface UserPreferences {

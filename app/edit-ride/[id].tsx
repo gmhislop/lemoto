@@ -1,27 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { Feather } from '@expo/vector-icons';
-import Animated, {
-  useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, Easing,
-} from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ride } from '../../types/ride';
-import { saveRide } from '../../lib/ride-storage';
-import { getTonightDefaults, getWeekendDefaults } from '../../lib/date-utils';
+import { getRides, updateRide } from '../../lib/ride-storage';
 import { geocodeLocation, fetchWeatherForRide } from '../../lib/weather-api';
 import { calculateRideScore, calculateConfidence } from '../../lib/weather-score';
 import { UserPreferences, DEFAULT_PREFERENCES } from '../../types/weather';
-import { getLastLocation, saveLastLocation } from '../../lib/defaults-storage';
 import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/colors';
 import { AppHeader } from '../../components/AppHeader';
 import { PressableScale } from '../../components/PressableScale';
 import { typography } from '../../theme/typography';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const PREFS_KEY = 'lemoto:preferences';
+
+function localDateString(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function getEndTime(startTime: string, durationHours: number): string {
   const [h, m] = startTime.split(':').map(Number);
@@ -29,92 +29,67 @@ function getEndTime(startTime: string, durationHours: number): string {
   return `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 
-function localDateString(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function uuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
-export default function AddRideScreen() {
+export default function EditRideScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, isDark } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
+  const [ride, setRide] = useState<Ride | null>(null);
   const [rideLabel, setRideLabel] = useState('');
   const [destination, setDestination] = useState('');
-  const [date, setDate] = useState<Date>(() => {
-    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0); return d;
-  });
-  const [startTime, setStartTime] = useState<Date>(() => {
-    const d = new Date(); d.setHours(18, 0, 0, 0); return d;
-  });
+  const [date, setDate] = useState<Date>(new Date());
+  const [startTime, setStartTime] = useState<Date>(() => { const d = new Date(); d.setHours(18, 0, 0, 0); return d; });
   const [durationMin, setDurationMin] = useState(120);
   const [showDate, setShowDate] = useState(false);
   const [showTime, setShowTime] = useState(false);
   const [saving, setSaving] = useState(false);
   const [geoFallback, setGeoFallback] = useState(false);
 
-  // Pre-fill last used location
   useEffect(() => {
-    getLastLocation().then((loc) => {
-      if (loc) setDestination(loc.label);
+    getRides().then((rides) => {
+      const found = rides.find((r) => r.id === id);
+      if (!found) return;
+      setRide(found);
+      setRideLabel(found.label);
+      setDestination(found.location.label);
+      const [y, mo, day] = found.date.split('-').map(Number);
+      setDate(new Date(y, mo - 1, day));
+      const [h, m] = found.startTime.split(':').map(Number);
+      const t = new Date(); t.setHours(h, m, 0, 0); setStartTime(t);
+      setDurationMin(found.durationHours * 60);
     });
-  }, []);
+  }, [id]);
 
   const dateStr = date.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
 
-  // CTA idle breathing
-  const ctaScale = useSharedValue(1);
-  useEffect(() => {
-    ctaScale.value = withRepeat(
-      withSequence(
-        withTiming(1.015, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1, true,
-    );
-  }, []);
-  const ctaAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: ctaScale.value }] }));
-
-  function applyQuickSelect(type: 'tonight' | 'weekend') {
-    const d = type === 'tonight' ? getTonightDefaults() : getWeekendDefaults();
-    const [y, mo, day] = d.date.split('-').map(Number);
-    setDate(new Date(y, mo - 1, day));
-    const [h, min] = d.startTime.split(':').map(Number);
-    const t = new Date(); t.setHours(h, min, 0, 0); setStartTime(t);
-    setDurationMin(d.durationHours * 60);
-  }
-
   async function handleSave() {
+    if (!ride) return;
     if (!destination.trim()) { Alert.alert('Destination required', 'Please enter a destination.'); return; }
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (date < today) { Alert.alert('Past date', 'Please choose today or a future date.'); return; }
     setSaving(true);
     setGeoFallback(false);
     try {
       const rideDate = localDateString(date);
       const durationHours = durationMin / 60;
 
-      // Geocode destination (best-effort — never blocks save)
+      // Geocode destination (best-effort)
       let geo = null;
       try { geo = await geocodeLocation(destination.trim()); } catch { /* network error */ }
       if (!geo) setGeoFallback(true);
       const location = geo
         ? { lat: geo.lat, lon: geo.lon, label: geo.label }
-        : { lat: 52.37, lon: 4.9, label: destination.trim() };
+        : { lat: ride.location.lat, lon: ride.location.lon, label: destination.trim() };
 
-      // Build base ride
-      const ride: Ride = {
-        id: uuid(), label: rideLabel.trim() || destination.trim(), date: rideDate, startTime: timeStr,
-        durationHours, location,
+      const updates: Partial<Ride> = {
+        label: rideLabel.trim() || destination.trim(),
+        date: rideDate,
+        startTime: timeStr,
+        durationHours,
+        location,
       };
 
-      // Fetch weather + calculate status (best-effort — never blocks save)
+      // Re-fetch weather for updated date/time/location
       try {
         const endTime = getEndTime(timeStr, durationHours);
         const [outboundWeather, returnWeather, prefsRaw] = await Promise.all([
@@ -124,49 +99,38 @@ export default function AddRideScreen() {
         ]);
         const prefs: UserPreferences = prefsRaw ? JSON.parse(prefsRaw) : DEFAULT_PREFERENCES;
         const { overallStatus, outboundStatus, returnStatus, reasons } = calculateRideScore(outboundWeather, returnWeather, prefs);
-        const confidence = calculateConfidence(rideDate);
-        ride.weatherData = outboundWeather;
-        ride.returnWeatherData = returnWeather;
-        ride.status = overallStatus;
-        ride.outboundStatus = outboundStatus;
-        ride.returnStatus = returnStatus;
-        ride.reasons = reasons;
-        ride.confidence = confidence;
-        ride.fetchedAt = new Date().toISOString();
+        updates.weatherData = outboundWeather;
+        updates.returnWeatherData = returnWeather;
+        updates.status = overallStatus;
+        updates.outboundStatus = outboundStatus;
+        updates.returnStatus = returnStatus;
+        updates.reasons = reasons;
+        updates.confidence = calculateConfidence(rideDate);
+        updates.fetchedAt = new Date().toISOString();
       } catch {
-        // Weather failed — save without status, refreshed on home screen
+        // Weather failed — save other changes without re-scoring
       }
 
-      await saveRide(ride);
-      await saveLastLocation({ label: location.label, lat: location.lat, lon: location.lon });
-      setRideLabel('');
-      setDestination('');
-      router.push(`/ride/${ride.id}`);
-    } catch { Alert.alert('Error', 'Could not save ride.'); }
+      await updateRide(ride.id, updates);
+      router.back();
+    } catch { Alert.alert('Error', 'Could not save changes.'); }
     finally { setSaving(false); }
   }
 
+  if (!ride) return null;
+
   return (
     <View style={s.screen}>
-      <AppHeader />
-      <ScrollView style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      {/* Header */}
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, left: 10, bottom: 10, right: 10 }}>
+          <Feather name="arrow-left" size={22} color={colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>EDIT RIDE</Text>
+        <View style={{ width: 32 }} />
+      </View>
 
-        {/* Quick Select */}
-        <View style={s.block}>
-          <Text style={s.fieldLabel}>QUICK SELECT</Text>
-          <View style={s.quickRow}>
-            <PressableScale style={s.quickCard} onPress={() => applyQuickSelect('tonight')} haptic>
-              <Feather name="moon" size={24} color={colors.primary} style={{ marginBottom: 10 }} />
-              <Text style={s.quickTitle}>TONIGHT</Text>
-              <Text style={s.quickSub}>20:00 START</Text>
-            </PressableScale>
-            <PressableScale style={s.quickCard} onPress={() => applyQuickSelect('weekend')} haptic>
-              <Feather name="calendar" size={24} color={colors.primary} style={{ marginBottom: 10 }} />
-              <Text style={s.quickTitle}>WEEKEND</Text>
-              <Text style={s.quickSub}>SATURDAY 09:00</Text>
-            </PressableScale>
-          </View>
-        </View>
+      <ScrollView style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         {/* Ride name */}
         <View style={s.inputGroup}>
@@ -203,7 +167,7 @@ export default function AddRideScreen() {
           {geoFallback && (
             <View style={s.geoFallbackRow}>
               <Feather name="alert-circle" size={12} color={colors.orange} />
-              <Text style={s.geoFallbackText}>Location not found — using Amsterdam as fallback</Text>
+              <Text style={s.geoFallbackText}>Location not found — keeping existing coordinates</Text>
             </View>
           )}
         </View>
@@ -211,7 +175,7 @@ export default function AddRideScreen() {
         {/* Date & Time */}
         <View style={s.dateTimeRow}>
           <View style={s.dateTimeField}>
-            <Text style={s.fieldLabel}>DEPARTURE DATE</Text>
+            <Text style={s.fieldLabel}>DATE</Text>
             {Platform.OS === 'ios' ? (
               <DateTimePicker value={date} mode="date" display="default" minimumDate={new Date()} themeVariant={isDark ? 'dark' : 'light'} onChange={(_, d) => { if (d) setDate(d); }} style={s.iosPicker} />
             ) : (
@@ -264,11 +228,9 @@ export default function AddRideScreen() {
         </View>
 
         {/* CTA */}
-        <Animated.View style={ctaAnimStyle}>
-          <PressableScale style={[s.cta, saving && { opacity: 0.6 }]} onPress={handleSave} scale={0.97} haptic disabled={saving}>
-            <Text style={s.ctaText}>{saving ? 'SAVING...' : 'ADD RIDE'}</Text>
-          </PressableScale>
-        </Animated.View>
+        <PressableScale style={[s.cta, saving && { opacity: 0.6 }]} onPress={handleSave} scale={0.97} haptic disabled={saving}>
+          <Text style={s.ctaText}>{saving ? 'SAVING...' : 'SAVE CHANGES'}</Text>
+        </PressableScale>
       </ScrollView>
     </View>
   );
@@ -276,14 +238,11 @@ export default function AddRideScreen() {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: c.headerBgStrong, paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: c.surfaceLow },
+  headerTitle: { fontFamily: typography.fontFamily.headline, fontSize: 20, letterSpacing: -0.5, color: c.onSurface },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32, gap: 32 },
-  block: { gap: 12 },
   fieldLabel: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.xs, color: c.outline, letterSpacing: 2 },
-  quickRow: { flexDirection: 'row', gap: 12 },
-  quickCard: { flex: 1, backgroundColor: c.surfaceCard, borderRadius: 4, padding: 20, borderWidth: 1, borderColor: c.surfaceHighest },
-  quickTitle: { fontFamily: typography.fontFamily.headline, fontSize: typography.size.md, color: c.onSurface, letterSpacing: -0.3 },
-  quickSub: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: c.outline, marginTop: 2 },
   inputGroup: { gap: 8 },
   geoFallbackRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4 },
   geoFallbackText: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: c.orange },
