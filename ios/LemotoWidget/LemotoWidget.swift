@@ -196,18 +196,6 @@ struct LemotoWidgetEntryView: View {
     }
 }
 
-// MARK: - Background modifier (containerBackground is iOS 17+)
-
-private struct WidgetBackgroundModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 17.0, *) {
-            content.containerBackground(.background, for: .widget)
-        } else {
-            content.background(Color(.systemBackground))
-        }
-    }
-}
-
 // MARK: - Widget declaration
 
 @main
@@ -217,7 +205,7 @@ struct LemotoWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: LemotoProvider()) { entry in
             LemotoWidgetEntryView(entry: entry)
-                .modifier(WidgetBackgroundModifier())
+                .containerBackground(.background, for: .widget)
         }
         .configurationDisplayName("Lemoto")
         .description("Ride conditions at a glance.")
