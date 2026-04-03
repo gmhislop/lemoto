@@ -143,7 +143,7 @@ export default function HomeScreen() {
               fetchWeatherForRide(ride.location.lat, ride.location.lon, ride.date, ride.startTime, 1),
               fetchWeatherForRide(ride.location.lat, ride.location.lon, ride.date, endTime, 1),
             ]);
-            const { overallStatus, outboundStatus, returnStatus, reasons } = calculateRideScore(outboundWeather, returnWeather, prefs);
+            const { overallStatus, outboundStatus, returnStatus, reasons, advisory, advisoryType } = calculateRideScore(outboundWeather, returnWeather, prefs);
             const confidence = calculateConfidence(ride.date);
             const updates = {
               weatherData: outboundWeather,
@@ -152,6 +152,8 @@ export default function HomeScreen() {
               outboundStatus,
               returnStatus,
               reasons,
+              advisory,
+              advisoryType,
               confidence,
               fetchedAt: new Date().toISOString(),
             };
@@ -184,6 +186,7 @@ export default function HomeScreen() {
         nextRideDate: nextRide?.date ?? null,
         nextRideTime: nextRide?.startTime ?? null,
         nextRideLabel: nextRide?.label ?? null,
+        advisory: nextRide?.advisory,
         updatedAt: new Date().toISOString(),
       }).catch(() => {});
     }

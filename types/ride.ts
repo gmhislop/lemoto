@@ -20,6 +20,8 @@ export interface Ride {
   reasons?: WeatherReason[];
   weatherData?: WeatherData;       // outbound weather
   returnWeatherData?: WeatherData; // return weather
+  advisory?: string;               // e.g. "Return conditions are dangerous"
+  advisoryType?: import('../lib/weather-score').AdvisoryType;
   fetchedAt?: string;
   recurringId?: string;            // set when generated from a RecurringRide rule
 }

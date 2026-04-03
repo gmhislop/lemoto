@@ -27,7 +27,6 @@
       "bundler": "metro"
     },
     "scheme": "lemoto",
-    "newArchEnabled": true,
     "plugins": ["expo-router"]
   }
 }

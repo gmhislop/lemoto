@@ -125,6 +125,20 @@ describe('calculateTrafficLight', () => {
       expect(rainReason?.severity).toBe('danger');
     });
 
+    it('emits exactly one rain reason even when both probability and mm trigger', () => {
+      const weather = { ...BASE_WEATHER, precipitationProbability: 60, precipitationMm: 2.0 };
+      const { reasons } = calculateTrafficLight(weather, DEFAULT_PREFERENCES);
+      expect(reasons.filter((r) => r.factor === 'rain')).toHaveLength(1);
+    });
+
+    it('rain reason uses mm label when mm score dominates probability score', () => {
+      // mm at 1.2 (near danger threshold 1.5) → high score; pct at 25% (just above warn 20%) → low score
+      const weather = { ...BASE_WEATHER, precipitationProbability: 25, precipitationMm: 1.2 };
+      const { reasons } = calculateTrafficLight(weather, DEFAULT_PREFERENCES);
+      const rainReason = reasons.find((r) => r.factor === 'rain');
+      expect(rainReason?.label).toMatch(/mm\/u/);
+    });
+
     it('returns a wind reason with correct factor', () => {
       const weather = { ...BASE_WEATHER, windGustsKmh: 50 };
       const { reasons } = calculateTrafficLight(weather, DEFAULT_PREFERENCES);
@@ -181,6 +195,40 @@ describe('calculateRideScore', () => {
     const { reasons } = calculateRideScore(GOOD, BAD, DEFAULT_PREFERENCES);
     const terugReasons = reasons.filter((r) => r.label.startsWith('Terug:'));
     expect(terugReasons.length).toBeGreaterThan(0);
+  });
+
+  describe('advisory', () => {
+    it('is undefined when both legs are equal', () => {
+      const { advisory, advisoryType } = calculateRideScore(GOOD, GOOD, DEFAULT_PREFERENCES);
+      expect(advisory).toBeUndefined();
+      expect(advisoryType).toBeUndefined();
+    });
+
+    it('is undefined when outbound is worse than return', () => {
+      const { advisory, advisoryType } = calculateRideScore(BAD, GOOD, DEFAULT_PREFERENCES);
+      expect(advisory).toBeUndefined();
+      expect(advisoryType).toBeUndefined();
+    });
+
+    it('is "Return conditions are dangerous" when outbound green and return red', () => {
+      const { advisory, advisoryType } = calculateRideScore(GOOD, BAD, DEFAULT_PREFERENCES);
+      expect(advisory).toBe('Return conditions are dangerous');
+      expect(advisoryType).toBe('return_worse_than_outbound');
+    });
+
+    it('is "Return conditions are poor — plan accordingly" when outbound green and return orange', () => {
+      const ORANGE: WeatherData = { ...BASE_WEATHER, precipitationProbability: 35 };
+      const { advisory, advisoryType } = calculateRideScore(GOOD, ORANGE, DEFAULT_PREFERENCES);
+      expect(advisory).toBe('Return conditions are poor — plan accordingly');
+      expect(advisoryType).toBe('return_worse_than_outbound');
+    });
+
+    it('is "Return conditions are dangerous" when outbound orange and return red', () => {
+      const ORANGE: WeatherData = { ...BASE_WEATHER, precipitationProbability: 35 };
+      const { advisory, advisoryType } = calculateRideScore(ORANGE, BAD, DEFAULT_PREFERENCES);
+      expect(advisory).toBe('Return conditions are dangerous');
+      expect(advisoryType).toBe('return_worse_than_outbound');
+    });
   });
 });
 
@@ -294,6 +342,22 @@ describe('summarizeRide', () => {
         { factor: 'rain' as const, label: 'Kans op regen', severity: 'warning' as const, score: 2 },
       ];
       expect(summarizeRide('orange', reasons)).toBe('Strong winds');
+    });
+
+    it('wind beats rain via calculateTrafficLight when wind is near danger threshold and rain is light', () => {
+      // Default thresholds: green wind = 20, orange wind = 35. Gusts at 34 → score ≈ 9.3
+      // Rain pct: 25% is just above green (20%) → score ≈ 1.7
+      const weather: WeatherData = {
+        ...BASE_WEATHER,
+        windSpeedKmh: 20,
+        windGustsKmh: 34, // near danger threshold (35)
+        precipitationProbability: 25, // light rain warning
+        precipitationMm: 0.1,
+      };
+      const { status, reasons } = calculateTrafficLight(weather, DEFAULT_PREFERENCES);
+      expect(status).toBe('orange');
+      const summary = summarizeRide(status, reasons);
+      expect(summary).toBe('Strong winds');
     });
   });
 });

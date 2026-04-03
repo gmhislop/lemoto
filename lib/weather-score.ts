@@ -54,33 +54,31 @@ function addOneHour(time: string): string {
 }
 
 // Drempelwaarden — overschrijfbaar via UserPreferences
+// warn   = crossing this turns status orange
+// danger = crossing this turns status red
 const BASE_THRESHOLDS = {
-  green:  { maxRainPct: 20, maxRainMm: 0.5, maxWindKmh: 20, minTempC: 10 },
-  orange: { maxRainPct: 50, maxRainMm: 1.5, maxWindKmh: 35, minTempC: 5  },
+  warn:   { maxRainPct: 20, maxRainMm: 0.5, maxWindKmh: 20, minTempC: 10 },
+  danger: { maxRainPct: 50, maxRainMm: 1.5, maxWindKmh: 35, minTempC: 5  },
 };
 
 function buildThresholds(prefs: UserPreferences) {
-  // Deep copy so we don't mutate the original
   const t = {
-    green:  { ...BASE_THRESHOLDS.green },
-    orange: { ...BASE_THRESHOLDS.orange },
+    warn:   { ...BASE_THRESHOLDS.warn },
+    danger: { ...BASE_THRESHOLDS.danger },
   };
 
-  // Temperatuur
-  t.green.minTempC  = prefs.minTempC;
-  t.orange.minTempC = prefs.minTempC - 5;
+  t.warn.minTempC   = prefs.minTempC;
+  t.danger.minTempC = prefs.minTempC - 5;
 
-  // Wind
-  t.green.maxWindKmh  = prefs.maxWindKmh;
-  t.orange.maxWindKmh = prefs.maxWindKmh + 15;
+  t.warn.maxWindKmh   = prefs.maxWindKmh;
+  t.danger.maxWindKmh = prefs.maxWindKmh + 15;
 
-  // Regen tolerantie
   if (prefs.rainTolerance === 'low') {
-    t.green.maxRainPct  = 10;  t.green.maxRainMm  = 0.2;
-    t.orange.maxRainPct = 30;  t.orange.maxRainMm = 0.8;
+    t.warn.maxRainPct   = 10;  t.warn.maxRainMm   = 0.2;
+    t.danger.maxRainPct = 30;  t.danger.maxRainMm = 0.8;
   } else if (prefs.rainTolerance === 'high') {
-    t.green.maxRainPct  = 35;  t.green.maxRainMm  = 1.0;
-    t.orange.maxRainPct = 70;  t.orange.maxRainMm = 3.0;
+    t.warn.maxRainPct   = 35;  t.warn.maxRainMm   = 1.0;
+    t.danger.maxRainPct = 70;  t.danger.maxRainMm = 3.0;
   }
 
   return t;
@@ -92,10 +90,10 @@ function effectiveWind(weather: WeatherData): number {
 }
 
 /**
- * Normalises a value along a [greenThreshold, orangeThreshold] range → 0–10.
+ * Normalises a value along a [warnThreshold, dangerThreshold] range → 0–10.
  *
  * Calibration guarantee: a score of N always means the same thing regardless
- * of factor — "N/10 of the way from the green threshold to the danger threshold."
+ * of factor — "N/10 of the way from the warn threshold to the danger threshold."
  * Cross-factor comparisons are only fair if the threshold ranges themselves
  * represent equal urgency bands. Adjust URGENCY_MULTIPLIER below when real-world
  * data shows one factor is systematically over- or under-weighted.
@@ -130,71 +128,63 @@ function generateReasons(
   const reasons: WeatherReason[] = [];
   const wind = effectiveWind(weather);
 
-  // Regen kans
-  if (weather.precipitationProbability > thresholds.orange.maxRainPct) {
-    reasons.push({
-      factor: 'rain',
-      label: `Hoge kans op regen (${weather.precipitationProbability}%)`,
-      severity: 'danger',
-      score: proximityScore(weather.precipitationProbability, thresholds.green.maxRainPct, thresholds.orange.maxRainPct),
-    });
-  } else if (weather.precipitationProbability > thresholds.green.maxRainPct) {
-    reasons.push({
-      factor: 'rain',
-      label: `Kans op regen (${weather.precipitationProbability}%)`,
-      severity: 'warning',
-      score: proximityScore(weather.precipitationProbability, thresholds.green.maxRainPct, thresholds.orange.maxRainPct),
-    });
-  }
+  // Regen — probability + mm combined into one reason.
+  // rainScore = max of both signals so the stronger one wins without double-counting.
+  const pctInWarn   = weather.precipitationProbability > thresholds.warn.maxRainPct;
+  const pctInDanger = weather.precipitationProbability > thresholds.danger.maxRainPct;
+  const mmInWarn    = weather.precipitationMm > thresholds.warn.maxRainMm;
+  const mmInDanger  = weather.precipitationMm > thresholds.danger.maxRainMm;
 
-  // Neerslag mm (max over tijdslot — 0,0,3mm is wél nat)
-  if (weather.precipitationMm > thresholds.orange.maxRainMm) {
-    reasons.push({
-      factor: 'rain',
-      label: `Regen verwacht (${weather.precipitationMm.toFixed(1)} mm/u)`,
-      severity: 'danger',
-      score: proximityScore(weather.precipitationMm, thresholds.green.maxRainMm, thresholds.orange.maxRainMm),
-    });
-  } else if (weather.precipitationMm > thresholds.green.maxRainMm) {
-    reasons.push({
-      factor: 'rain',
-      label: `Lichte neerslag (${weather.precipitationMm.toFixed(1)} mm/u)`,
-      severity: 'warning',
-      score: proximityScore(weather.precipitationMm, thresholds.green.maxRainMm, thresholds.orange.maxRainMm),
-    });
+  if (pctInWarn || mmInWarn) {
+    const pctScore = pctInWarn
+      ? proximityScore(weather.precipitationProbability, thresholds.warn.maxRainPct, thresholds.danger.maxRainPct) * URGENCY_MULTIPLIER.rain
+      : 0;
+    const mmScore = mmInWarn
+      ? proximityScore(weather.precipitationMm, thresholds.warn.maxRainMm, thresholds.danger.maxRainMm) * URGENCY_MULTIPLIER.rain
+      : 0;
+    const rainScore = Math.max(pctScore, mmScore);
+    const severity  = pctInDanger || mmInDanger ? 'danger' : 'warning';
+    const label = pctScore >= mmScore
+      ? severity === 'danger'
+        ? `Hoge kans op regen (${weather.precipitationProbability}%)`
+        : `Kans op regen (${weather.precipitationProbability}%)`
+      : severity === 'danger'
+        ? `Regen verwacht (${weather.precipitationMm.toFixed(1)} mm/u)`
+        : `Lichte neerslag (${weather.precipitationMm.toFixed(1)} mm/u)`;
+    reasons.push({ factor: 'rain', label, severity, score: rainScore });
   }
 
   // Wind (inclusief windstoten)
-  if (wind > thresholds.orange.maxWindKmh) {
+  if (wind > thresholds.danger.maxWindKmh) {
     reasons.push({
       factor: 'wind',
       label: `Harde wind + windstoten (${wind} km/u)`,
       severity: 'danger',
-      score: proximityScore(wind, thresholds.green.maxWindKmh, thresholds.orange.maxWindKmh),
+      score: proximityScore(wind, thresholds.warn.maxWindKmh, thresholds.danger.maxWindKmh) * URGENCY_MULTIPLIER.wind,
     });
-  } else if (wind > thresholds.green.maxWindKmh) {
+  } else if (wind > thresholds.warn.maxWindKmh) {
     reasons.push({
       factor: 'wind',
       label: `Stevige wind (${wind} km/u)`,
       severity: 'warning',
-      score: proximityScore(wind, thresholds.green.maxWindKmh, thresholds.orange.maxWindKmh),
+      score: proximityScore(wind, thresholds.warn.maxWindKmh, thresholds.danger.maxWindKmh) * URGENCY_MULTIPLIER.wind,
     });
   }
 
   // Temperatuur (inverted — lower temp = higher score)
-  if (weather.temperatureC < thresholds.orange.minTempC) {
+  if (weather.temperatureC < thresholds.danger.minTempC) {
     reasons.push({
       factor: 'temperature',
       label: `Te koud om te rijden (${weather.temperatureC}°C)`,
       severity: 'danger',
-      score: proximityScore(weather.temperatureC, thresholds.green.minTempC, thresholds.orange.minTempC, true),
+      score: proximityScore(weather.temperatureC, thresholds.warn.minTempC, thresholds.danger.minTempC, true) * URGENCY_MULTIPLIER.temperature,
     });
-  } else if (weather.temperatureC < thresholds.green.minTempC) {
+  } else if (weather.temperatureC < thresholds.warn.minTempC) {
     reasons.push({
       factor: 'temperature',
       label: `Koud (${weather.temperatureC}°C)`,
       severity: 'warning',
-      score: proximityScore(weather.temperatureC, thresholds.green.minTempC, thresholds.orange.minTempC, true),
+      score: proximityScore(weather.temperatureC, thresholds.warn.minTempC, thresholds.danger.minTempC, true) * URGENCY_MULTIPLIER.temperature,
     });
   }
 
@@ -209,20 +199,20 @@ export function calculateTrafficLight(
   const wind = effectiveWind(weather);
 
   const isRed =
-    weather.precipitationProbability > thresholds.orange.maxRainPct ||
-    weather.precipitationMm          > thresholds.orange.maxRainMm  ||
-    wind                             > thresholds.orange.maxWindKmh ||
-    weather.temperatureC             < thresholds.orange.minTempC;
+    weather.precipitationProbability > thresholds.danger.maxRainPct ||
+    weather.precipitationMm          > thresholds.danger.maxRainMm  ||
+    wind                             > thresholds.danger.maxWindKmh ||
+    weather.temperatureC             < thresholds.danger.minTempC;
 
   if (isRed) {
     return { status: 'red', reasons: generateReasons(weather, thresholds) };
   }
 
   const isOrange =
-    weather.precipitationProbability > thresholds.green.maxRainPct ||
-    weather.precipitationMm          > thresholds.green.maxRainMm  ||
-    wind                             > thresholds.green.maxWindKmh ||
-    weather.temperatureC             < thresholds.green.minTempC;
+    weather.precipitationProbability > thresholds.warn.maxRainPct ||
+    weather.precipitationMm          > thresholds.warn.maxRainMm  ||
+    wind                             > thresholds.warn.maxWindKmh ||
+    weather.temperatureC             < thresholds.warn.minTempC;
 
   return {
     status: isOrange ? 'orange' : 'green',
@@ -286,6 +276,8 @@ export function summarizeRide(
  * Scores a ride with two separate weather checks: outbound (heen) and return (terug).
  * Overall status = worst of the two legs.
  */
+export type AdvisoryType = 'return_worse_than_outbound' | 'weather_worsens_during_ride';
+
 export function calculateRideScore(
   outbound: WeatherData,
   returns: WeatherData,
@@ -295,6 +287,8 @@ export function calculateRideScore(
   outboundStatus: TrafficLight;
   returnStatus: TrafficLight;
   reasons: WeatherReason[];
+  advisory?: string;
+  advisoryType?: AdvisoryType;
 } {
   const { status: outboundStatus, reasons: outboundReasons } = calculateTrafficLight(outbound, prefs);
   const { status: returnStatus, reasons: returnReasons } = calculateTrafficLight(returns, prefs);
@@ -307,11 +301,24 @@ export function calculateRideScore(
   const overallStatus: TrafficLight =
     rank[outboundStatus] >= rank[returnStatus] ? outboundStatus : returnStatus;
 
+  // Advisory — only when return leg is meaningfully worse than outbound.
+  // Distinguishes "don't ride" (overall red) from "be aware" (return worse, but go if you want).
+  let advisory: string | undefined;
+  let advisoryType: AdvisoryType | undefined;
+  if (rank[returnStatus] > rank[outboundStatus]) {
+    advisoryType = 'return_worse_than_outbound';
+    advisory = returnStatus === 'red'
+      ? 'Return conditions are dangerous'
+      : 'Return conditions are poor — plan accordingly';
+  }
+
   return {
     overallStatus,
     outboundStatus,
     returnStatus,
     reasons: [...taggedOutbound, ...taggedReturn],
+    advisory,
+    advisoryType,
   };
 }
 
