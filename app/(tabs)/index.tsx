@@ -13,7 +13,7 @@ import { generateRecurringInstances } from '../../lib/recurring-engine';
 import { notifyStatusChange } from '../../lib/notifications';
 import { fetchWeatherForRide, fetchTodayHourly } from '../../lib/weather-api';
 import { calculateRideScore, calculateConfidence, findBestRideWindow, summarizeRide, BestWindow } from '../../lib/weather-score';
-import { updateWidgetCache } from '../../lib/widget-cache';
+import { updateWidgetCache, getWidgetData } from '../../lib/widget-cache';
 import { getLastLocation } from '../../lib/defaults-storage';
 import { UserPreferences, DEFAULT_PREFERENCES } from '../../types/weather';
 import { useTheme } from '../../context/ThemeContext';
@@ -122,15 +122,49 @@ export default function HomeScreen() {
       if (!loc) return;
       const prefs: UserPreferences = prefsRaw ? JSON.parse(prefsRaw) : DEFAULT_PREFERENCES;
       const hours = await fetchTodayHourly(loc.lat, loc.lon);
-      setBestWindow(findBestRideWindow(hours, prefs));
+      const window = findBestRideWindow(hours, prefs);
+      setBestWindow(window);
+      // Patch bestWindow into the existing widget snapshot without overwriting other fields
+      const existing = await getWidgetData();
+      if (existing) {
+        updateWidgetCache({ ...existing, bestWindow: window, updatedAt: new Date().toISOString() }).catch(() => {});
+      }
     } catch { /* no window if offline */ }
+  }
+
+  async function syncWidgetSnapshot(rides: Ride[]) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const upcoming = rides.filter((r) => r.date >= todayStr);
+    const nextRide = upcoming[0] ?? null;
+    const overall = getOverallStatus(upcoming);
+    const summary = nextRide?.reasons
+      ? summarizeRide(overall, nextRide.reasons, {
+          returnTime: computeEndTime(nextRide.startTime, nextRide.durationHours),
+          confidence: nextRide.confidence,
+        })
+      : overall === 'green' ? 'Perfect conditions' : 'Check conditions';
+    const existing = await getWidgetData();
+    updateWidgetCache({
+      status: overall,
+      summary,
+      bestWindow: existing?.bestWindow ?? null,
+      nextRideDate: nextRide?.date ?? null,
+      nextRideTime: nextRide?.startTime ?? null,
+      nextRideLabel: nextRide?.label ?? null,
+      advisory: nextRide?.advisory,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => {});
   }
 
   async function loadAndRefresh(forceAll = false) {
     const loaded = await getRides();
     setRides(loaded);
     const stale = loaded.filter((r) => forceAll || needsRefresh(r));
-    if (!stale.length) { setRefreshing(false); return; }
+    if (!stale.length) {
+      setRefreshing(false);
+      syncWidgetSnapshot(loaded);
+      return;
+    }
     setRefreshing(true);
     try {
       const prefsRaw = await AsyncStorage.getItem(PREFS_KEY);
@@ -167,28 +201,7 @@ export default function HomeScreen() {
       );
     } finally {
       setRefreshing(false);
-      // Write widget-ready snapshot after refresh completes
-      const allRides = await getRides();
-      const todayStr = new Date().toISOString().split('T')[0];
-      const tomorrowStr = new Date(Date.now() + 86_400_000).toISOString().split('T')[0];
-      const nextRide = allRides.find((r) => r.date >= todayStr);
-      const overallForWidget = getOverallStatus(allRides.filter((r) => r.date >= todayStr));
-      const summaryForWidget = nextRide?.reasons
-        ? summarizeRide(overallForWidget, nextRide.reasons, {
-            returnTime: nextRide ? computeEndTime(nextRide.startTime, nextRide.durationHours) : undefined,
-            confidence: nextRide?.confidence,
-          })
-        : overallForWidget === 'green' ? 'Perfect conditions' : 'Check conditions';
-      updateWidgetCache({
-        status: overallForWidget,
-        summary: summaryForWidget,
-        bestWindow: null, // updated separately in loadBestWindow
-        nextRideDate: nextRide?.date ?? null,
-        nextRideTime: nextRide?.startTime ?? null,
-        nextRideLabel: nextRide?.label ?? null,
-        advisory: nextRide?.advisory,
-        updatedAt: new Date().toISOString(),
-      }).catch(() => {});
+      syncWidgetSnapshot(await getRides());
     }
   }
 

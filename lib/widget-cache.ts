@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import { TrafficLight } from '../types/ride';
 import { BestWindow } from './weather-score';
+import { writeWidgetData } from './widget-kit';
 
 export interface WidgetData {
   status: TrafficLight;        // overall verdict for today/tomorrow
@@ -14,16 +14,15 @@ export interface WidgetData {
   updatedAt: string;           // ISO timestamp
 }
 
-const APP_GROUP  = 'group.com.lemoto.app';
-const SHARED_KEY = 'lemoto_widget';  // UserDefaults key — no colons
-const LOCAL_KEY  = 'lemoto:widget';  // AsyncStorage key for in-app reads
+const LOCAL_KEY = 'lemoto:widget';  // AsyncStorage key for in-app reads
 
 export async function updateWidgetCache(data: WidgetData): Promise<void> {
   try {
-    // Write to shared UserDefaults so the iOS widget extension can read it
-    await SharedGroupPreferences.setItem(SHARED_KEY, data, APP_GROUP);
+    const json = JSON.stringify(data);
+    // Write to shared UserDefaults + reload WidgetKit timelines in one native call
+    await writeWidgetData(json);
     // Keep AsyncStorage in sync for in-app reads
-    await AsyncStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+    await AsyncStorage.setItem(LOCAL_KEY, json);
   } catch { /* never block the caller */ }
 }
 

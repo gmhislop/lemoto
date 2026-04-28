@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "modulesClassNames": ["WidgetKitModule"],
+    "frameworks": ["WidgetKit"]
+  }
+}
